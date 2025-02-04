@@ -1,12 +1,22 @@
-// WebSocket 서버 생성
+const http = require("http");
 const WebSocket = require("ws");
-const server = new WebSocket.Server({ port: 3000 });
 
-let unrealSocket = null; // 언리얼 소켓 저장
-let lastState = { sofa: false };  // 소파 상태 저장
+const PORT = process.env.PORT || 3000; // Cloudtype이 자동으로 포트를 할당할 수 있도록 설정
 
-server.on("connection", (socket) => {
-    console.log("Client connected");
+// HTTP 서버 생성 (Cloudtype이 요청을 처리할 수 있도록 함)
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("WebSocket Server is running\n");
+});
+
+// WebSocket 서버 생성
+const wss = new WebSocket.Server({ server });
+
+let unrealSocket = null; // Unreal 소켓 저장
+let lastState = { sofa: false }; // 소파 상태 저장
+
+wss.on("connection", (socket) => {
+    console.log("✅ Client connected");
 
     socket.on("message", (message) => {
         try {
@@ -17,41 +27,30 @@ server.on("connection", (socket) => {
                 unrealSocket = socket;
                 console.log("✅ Unreal client registered");
 
-                // Unreal이 재연결되었을 때, 기존 소파 상태를 다시 전송
+                // Unreal이 재연결되었을 때 기존 소파 상태 전송
                 if (lastState.sofa !== undefined) {
                     const restoreData = {
                         type: "update",
                         clientId: "sofa",
                         interaction: "seat",
-                        value: lastState.sofa
+                        value: lastState.sofa,
                     };
-                    const jsonData = JSON.stringify(restoreData);
-                    console.log("📡 Restoring state to Unreal:", jsonData);
-                    unrealSocket.send(jsonData);
+                    console.log("📡 Restoring state to Unreal:", restoreData);
+                    unrealSocket.send(JSON.stringify(restoreData));
                 }
-
             } else if (data.type === "update") {
                 console.log(`📩 Received data from ${data.clientId}:`, data);
 
                 // Unreal Engine으로 전송
                 if (unrealSocket && unrealSocket.readyState === WebSocket.OPEN) {
-                    const jsonData = JSON.stringify(data);
-                    console.log("📡 Sending JSON to Unreal:", jsonData);
-                    unrealSocket.send(jsonData);
+                    console.log("📡 Sending JSON to Unreal:", data);
+                    unrealSocket.send(JSON.stringify(data));
                 } else {
                     console.log("⚠️ Unreal client not connected");
                 }
 
-                // 값이 변하지 않았다면 Unreal로 전송하지 않음
-                if (lastState[data.clientId] === data.value) {
-                    console.log(`⚠️ 상태 변경 없음: ${data.clientId} (value=${data.value})`);
-                    return;
-                }
-
                 // 상태 업데이트
                 lastState[data.clientId] = data.value;
-
-                
             }
         } catch (error) {
             console.error("❌ Error parsing message:", error);
@@ -59,7 +58,7 @@ server.on("connection", (socket) => {
     });
 
     socket.on("close", () => {
-        console.log("Client disconnected");
+        console.log("❌ Client disconnected");
 
         if (socket === unrealSocket) {
             console.log("🚫 Unreal client disconnected");
@@ -68,4 +67,7 @@ server.on("connection", (socket) => {
     });
 });
 
-console.log("✅ WebSocket server running on ws://localhost:3000");
+// Cloudtype에서 자동으로 할당된 포트에서 서버 실행
+server.listen(PORT, () => {
+    console.log(`✅ WebSocket server running on port ${PORT}`);
+});
